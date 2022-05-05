@@ -489,14 +489,39 @@ def run_saturation_brats(pocket):
 
 # In[ ]:
 
+def GetSetupKfolds(numfolds,idfold,dataidsfull ):
+  from sklearn.model_selection import KFold
+
+  if (numfolds < idfold or numfolds < 1):
+     raise("data input error")
+  # split in folds
+  if (numfolds > 1):
+     kf = KFold(n_splits=numfolds)
+     allkfolds = [ (list(map(lambda iii: dataidsfull[iii], train_index)), list(map(lambda iii: dataidsfull[iii], test_index))) for train_index, test_index in kf.split(dataidsfull )]
+     train_index = allkfolds[idfold][0]
+     test_index  = allkfolds[idfold][1]
+  else:
+     train_index = np.array(dataidsfull )
+     test_index  = None  
+  return (train_index,test_index)
 
 def run_saturation_covidx(pocket):
     
     # Load main dataframe with images and targets
     # Used clean version of COVIDx dataset. See preprocess.ipynb.
-    train = pd.read_csv('covidx_train_clean.csv')
+    train = pd.read_csv('dicom/wideclassificationd2.csv')
+    pats = np.unique(train['id'])
+    (train_validation_index,test_index) = GetSetupKfolds(5,0,pats )
+    print(train_validation_index)
+    print(test_index)
+    raise
     test = pd.read_csv('test.csv')
         
+
+    # Fix a test set and scale up the size of each training set
+    trainPats, testPats, _, _ = train_test_split(pats, pats, test_size = 0.20, random_state = 0)
+    trainPats, valPats, _, _ = train_test_split(trainPats, trainPats, test_size = 0.05, random_state = 0)
+    
     # Convert targets from int to str for Keras generators
     train['target'] = train['target'].map(str)
     test['target'] = test['target'].map(str)
