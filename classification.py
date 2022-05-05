@@ -509,33 +509,31 @@ def run_saturation_covidx(pocket):
     
     # Load main dataframe with images and targets
     # Used clean version of COVIDx dataset. See preprocess.ipynb.
-    train = pd.read_csv('dicom/wideclassificationd2.csv')
-    pats = np.unique(train['id'])
-    (train_validation_index,test_index) = GetSetupKfolds(5,0,pats )
-    print(train_validation_index)
-    print(test_index)
-    raise
-    test = pd.read_csv('test.csv')
-        
+    fulldata = pd.read_csv('dicom/wideclassificationd2.csv')
+    pats = np.unique(fulldata['id'])
+    idfold=0
+    nfold = 5
+    (train_validation_index,test_index) = GetSetupKfolds(nfold ,idfold,pats )
+    trainPats, valPats, _, _ = train_test_split(train_validation_index, train_validation_index, test_size = 0.10, random_state = 0)
 
-    # Fix a test set and scale up the size of each training set
-    trainPats, testPats, _, _ = train_test_split(pats, pats, test_size = 0.20, random_state = 0)
-    trainPats, valPats, _, _ = train_test_split(trainPats, trainPats, test_size = 0.05, random_state = 0)
-    
+    # get subsets
+    val=fulldata[fulldata['id'].isin(valPats)]
+    train=fulldata[fulldata['id'].isin(trainPats)]
+        
     # Convert targets from int to str for Keras generators
     train['target'] = train['target'].map(str)
-    test['target'] = test['target'].map(str)
+    ## test['target'] = test['target'].map(str)
     
-    # Use COVIDx test set and scale up the size of each training set
-    train, val, _, _ = train_test_split(train, train['target'], test_size = 0.05, random_state = 0)
-    train = train.reset_index(drop = True)
-    val = val.reset_index(drop = True)
-    val_imbalance = 1 - np.sum(val['target'].map(int)) / len(val)
-    print('Val class imbalance = ' + str(val_imbalance))
+    ## # Use COVIDx test set and scale up the size of each training set
+    ## train, val, _, _ = train_test_split(train, train['target'], test_size = 0.05, random_state = 0)
+    ## train = train.reset_index(drop = True)
+    ## val = val.reset_index(drop = True)
+    ## val_imbalance = 1 - np.sum(val['target'].map(int)) / len(val)
+    ## print('Val class imbalance = ' + str(val_imbalance))
     
     # Logarithmic data scaling
     numTrain = len(train)
-    logSizes = [0.015, 0.03, 0.05, 0.10, 0.25, 0.50, 1.00]
+    logSizes = [1.00]
     chunkSize = [int(np.ceil(numTrain * i)) for i in logSizes]
     
     # Define batchsize for models
@@ -543,7 +541,7 @@ def run_saturation_covidx(pocket):
     
     # Parameters for Keras generator 
     flowParams = dict(directory = '/rsrch1/ip/aecelaya/data/covidx/processed/train/', 
-                      x_col = 'image', 
+                      x_col = 'Art', 
                       y_col = 'target',
                       class_mode = 'categorical', 
                       color_mode = 'grayscale', 
@@ -551,8 +549,10 @@ def run_saturation_covidx(pocket):
     
     
     # Save predictions here
-    preds = test[['image', 'target']]
+    # TODO 
+    ## preds = test[['image', 'target']]
         
+    net = 'unet'
     for i in range(len(logSizes)):
         
         if pocket:
@@ -572,7 +572,7 @@ def run_saturation_covidx(pocket):
         valGen = valGen.flow_from_dataframe(val, **flowParams)
         
         # Create and compile model
-        model = PocketNet((256, 256, 1), 2, 'class', 'unet', pocket, 16, 4)
+        model = PocketNet((256, 256, 1), 2, 'class', net , pocket, 16, 4)
         model.compile(optimizer = 'adam', loss = 'categorical_crossentropy', metrics = ['categorical_accuracy', tf.keras.metrics.AUC()])
 
         # Define callbacks
