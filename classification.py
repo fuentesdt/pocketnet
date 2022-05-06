@@ -284,95 +284,16 @@ class data_generator(keras.utils.Sequence):
 # In[ ]:
 
 
-def inference_brats(model, df, num_classes, dest):
-    
-    dims = sitk.ReadImage(df.iloc[0]['mask'])
-    dims = sitk.GetArrayFromImage(dims)
-    dims = dims.shape
-    
-    def read_images(image_list, dims):
-        def get_array(path):
-            arr = sitk.ReadImage(path)
-            arr = sitk.Normalize(arr)
-            arr = sitk.GetArrayFromImage(arr)
-            return arr
 
-        image = np.empty((*dims, len(image_list)))
-
-        for i in image_list:
-            image[..., i] = get_array(i)
-
-        return image
-    
-    # Define parameters 
-    patients = list(df['id'])
-    slice_thickness = 5
-    pred_img_depth = dims[0] + (2 * slice_thickness)
-    
-    for i in trange(len(patients)):
-        
-        patient = df.iloc[i].to_dict()
-        
-        image_list = list(patient.values())[2:len(patient)]
-        
-        original = sitk.ReadImage(image_list[0])
-        
-        # Load test patient image
-        image = np.empty((pred_img_depth, dims[1], dims[2], len(image_list)))
-        image[slice_thickness:(dims[0] - slice_thickness), ...] = read_images(image_list, dims)
-
-        # Predict on overlaping tiles of test image
-        prediction = np.empty((pred_img_depth, dims[1], dims[2], num_classes))
-        for k in range(pred_img_depth - slice_thickness + 1):
-            temp = image[k:(k + slice_thickness), ...]
-            temp = temp.reshape((1, slice_thickness, dims[1], dims[2], len(image_list)))
-            temp = model.predict(temp)
-            temp = temp.reshape((slice_thickness, dims[1], dims[2], num_classes))
-            prediction[k:(k + slice_thickness), ...] += temp
-
-        # Take average prediction from overlap strategy and apply argmax to get final array
-        prediction /= slice_thickness
-        prediction = prediction[slice_thickness:(pred_img_depth - slice_thickness), ...]
-        prediction = np.argmax(prediction, axis = -1)
-        prediction = prediction.reshape((*dims))
-
-        # Write prediction as SITK image
-        pred_sitk = np.zeros((*dims))
-        for j in range(dims[0]):
-            pred_sitk[j, ...] = prediction[j, ...]
-
-        # Copy header information from t1 image
-        pred_sitk = sitk.GetImageFromArray(pred_sitk)
-        pred_sitk.CopyInformation(original)
-
-        # Write prediction as nifit file
-        pred_file = dest + patient['id'] + '_prediction.nii.gz'
-        sitk.WriteImage(pred_sitk, pred_file)
-
-    ##### END OF FUNCTION #####
-
-
-# Create predictions on COVIDx images after training each model.
-
-# In[ ]:
-
-
-def inference_covidx(model, df):
+def inference_class(model, df):
     preds = list()
     for i in trange(len(df)):
-        img = '/rsrch1/ip/aecelaya/data/covidx/processed/test/' + df.iloc[i]['image']
-        img = tf.keras.preprocessing.image.load_img(img, color_mode = 'grayscale', target_size = (256, 256))
-        img = keras.preprocessing.image.img_to_array(img)
+        img = np.load(df.iloc[i]['image'])
         
         # Apply z-score normalization
-        mu = np.mean(img)
-        std = np.std(img)
-        img = (img - mu) / std
-        
-        
-        img = img.reshape((1, *img.shape))
-        pred = model.predict(img)
-        pred = pred[0][-1]
+        #img = img.reshape((1, *img.shape))
+        pred = model.predict(img[np.newaxis,:,:,:,:])
+        pred = preda[0][-1]
         preds.append(pred)
     return preds
 
@@ -393,7 +314,7 @@ def GetSetupKfolds(numfolds,idfold,dataidsfull ):
      raise("data input error")
   # split in folds
   if (numfolds > 1):
-     kf = KFold(n_splits=numfolds)
+     kf = KFold(n_splits=numfolds,random_state=1,shuffle=True)
      allkfolds = [ (list(map(lambda iii: dataidsfull[iii], train_index)), list(map(lambda iii: dataidsfull[iii], test_index))) for train_index, test_index in kf.split(dataidsfull )]
      train_index = allkfolds[idfold][0]
      test_index  = allkfolds[idfold][1]
@@ -416,6 +337,7 @@ def run_saturation_pdac(pocket):
     # get subsets
     val=fulldata[fulldata['id'].isin(valPats)]
     train=fulldata[fulldata['id'].isin(trainPats)]
+    test=fulldata[fulldata['id'].isin(test_index)]
         
     ## # Use COVIDx test set and scale up the size of each training set
     ## train, val, _, _ = train_test_split(train, train['target'], test_size = 0.05, random_state = 0)
@@ -424,72 +346,59 @@ def run_saturation_pdac(pocket):
     ## val_imbalance = 1 - np.sum(val['target'].map(int)) / len(val)
     ## print('Val class imbalance = ' + str(val_imbalance))
     
-    # Logarithmic data scaling
-    numTrain = len(train)
-    logSizes = [1.00]
-    chunkSize = [int(np.ceil(numTrain * i)) for i in logSizes]
-    
     # Define batchsize for models
     batchSize = 4
     
     # Save predictions here
     # TODO 
-    ## preds = test[['image', 'target']]
+    preds = test[['image', 'truthid']]
         
     net = 'unet'
-    for i in range(len(logSizes)):
-        
-        if pocket:
-            print('Running pocket ' + net + ' with ' + str(100 * logSizes[i]) + '% of training data')
-        else:
-            print('Running full ' + net + ' with ' + str(100 * logSizes[i]) + '% of training data')
-        
-        currentTrain = train.iloc[0:chunkSize[i]]
 
-        # Create training and validation generators 
-        trainGenerator = data_generator(currentTrain, batchSize,dim = (96, 256, 256),n_channels=2,n_classes=2)
-        validationGenerator = data_generator(val, batchSize,dim = (96, 256, 256),n_channels=2,n_classes=2)
-        
-        # Create and compile model
-        model = PocketNet((256, 256, 96,2), 2, 'class', net , pocket, 16, 4)
-        model.compile(optimizer = 'adam', loss = 'categorical_crossentropy', metrics = ['categorical_accuracy', tf.keras.metrics.AUC()])
+    # Create training and validation generators 
+    trainGenerator = data_generator(train, batchSize,dim = (96, 256, 256),n_channels=2,n_classes=2)
+    validationGenerator = data_generator(val, batchSize,dim = (96, 256, 256),n_channels=2,n_classes=2)
+    
+    # Create and compile model
+    model = PocketNet((96,256, 256, 2), 2, 'class', net , pocket, 16, 4)
+    model.compile(optimizer = 'adam', loss = 'categorical_crossentropy', metrics = ['categorical_accuracy', tf.keras.metrics.AUC()])
 
-        # Define callbacks
-        # Reduce learning rate when learning stalls
-        reduceLr = ReduceLROnPlateau(monitor = 'val_categorical_accuracy', 
-                                     mode = 'max',
-                                     factor = 0.1, 
-                                     patience = 3, 
-                                     min_lr = 0.0000001, 
-                                     verbose = 1)
+    # Define callbacks
+    # Reduce learning rate when learning stalls
+    reduceLr = ReduceLROnPlateau(monitor = 'val_categorical_accuracy', 
+                                 mode = 'max',
+                                 factor = 0.1, 
+                                 patience = 3, 
+                                 min_lr = 0.0000001, 
+                                 verbose = 1)
 
-        # Save best model based on validation accuracy
-        # Name convention: (architecture)_(full/pocket)_(% of training data used).h5 -> unet_pocket_20.h5
-        if pocket:
-            modelName = 'models/' + net + '_pocket_' + str(100 * logSizes[i]) + '.h5'
-        else:
-            modelName = 'models/' + net + '_full_' + str(100 * logSizes[i]) + '.h5'
-        
-        saveBestModel = ModelCheckpoint(filepath = modelName, 
-                                        monitor = 'val_categorical_accuracy', 
-                                        mode = 'max',
-                                        verbose = 1, 
-                                        save_best_only = True)
-        
-        # Fit model
-        model.fit(trainGenerator , 
-                  epochs = 50,
-                  steps_per_epoch = (len(currentTrain)) // batchSize,
-                  validation_data = validationGenerator ,
-                  validation_steps = (len(val)) // batchSize,
-                  callbacks = [reduceLr, saveBestModel]
-                  #use_multiprocessing = True, 
-                 # workers = 8
-                  )
-        
-        # Load best model for prediction
-        model = load_model(modelName)
-        preds[modelName[7:-3]] = np.array(inference_covidx(model, test))
+    # Save best model based on validation accuracy
+    # Name convention: (architecture)_(full/pocket)_(% of training data used).h5 -> unet_pocket_20.h5
+    if pocket:
+        modelName = 'models/' + net + '_pocket_' + str(idfold ) + '.h5'
+    else:
+        modelName = 'models/' + net + '_full_' + str(idfold ) + '.h5'
+    
+    saveBestModel = ModelCheckpoint(filepath = modelName, 
+                                    monitor = 'val_categorical_accuracy', 
+                                    mode = 'max',
+                                    verbose = 1, 
+                                    save_best_only = True)
+    
+    # Fit model
+    model.fit(trainGenerator , 
+              epochs = 2,
+              steps_per_epoch = (len(train)) // batchSize,
+              validation_data = validationGenerator ,
+              validation_steps = (len(val)) // batchSize,
+              callbacks = [reduceLr, saveBestModel]
+              #use_multiprocessing = True, 
+             # workers = 8
+              )
+    
+    # Load best model for prediction
+    model = load_model(modelName)
+    preds[modelName[7:-3]] = np.array(inference_class(model, test))
     
     # For each network architecture, write scaling results to csv file
     if pocket:
@@ -505,8 +414,5 @@ def run_saturation_pdac(pocket):
 # In[ ]:
 
 
-pockets = [True, False]
-for pocket in pockets:
-    #run_saturation_brats(pocket = pockets)
-    run_saturation_pdac(pocket = pockets)
+run_saturation_pdac(pocket = True)
 

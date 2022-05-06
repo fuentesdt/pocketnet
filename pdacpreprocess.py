@@ -124,6 +124,7 @@ def write_slices(input_csv, image_dest, mask_dest, output_csv, image_dims):
         #mask_binary = ReadMaskSITK(current_pat['mask'], classes = [0, 1])
 
         img_slice_name = image_dest + "%d/image.npy"  % current_pat['id'] 
+        print(img.shape)
         np.save(img_slice_name, img )
         # Track slices with output dataframe
         output_df = output_df.append({'id': current_pat['id'], 
