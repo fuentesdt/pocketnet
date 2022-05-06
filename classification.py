@@ -293,7 +293,7 @@ def inference_class(model, df):
         # Apply z-score normalization
         #img = img.reshape((1, *img.shape))
         pred = model.predict(img[np.newaxis,:,:,:,:])
-        pred = preda[0][-1]
+        pred = pred[0][-1]
         preds.append(pred)
     return preds
 
