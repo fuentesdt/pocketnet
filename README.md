@@ -25,3 +25,7 @@ COVIDx8B dataset - <https://github.com/lindawangg/COVID-Net/blob/master/docs/COV
 4) Run performance profiling with ```performance_profile.ipynb```
 
 A generic implementation of each architecture (pocket and non-pocket versions) is available in ```pocketnet.ipynb```. 
+
+#### Convert ipynb to py
+---
+ipython3 nbconvert preprocess.ipynb --to python
