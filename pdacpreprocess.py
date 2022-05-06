@@ -110,7 +110,7 @@ def write_slices(input_csv, image_dest, mask_dest, output_csv, image_dims):
     input_df = pd.read_csv(input_csv)
     num_pats = len(input_df)
     
-    output_cols = ['id', 'image', 'target']
+    output_cols = ['id', 'image', 'truthid', 'target']
     output_df = pd.DataFrame(columns = output_cols)
     
     for i in trange(num_pats):
@@ -128,6 +128,7 @@ def write_slices(input_csv, image_dest, mask_dest, output_csv, image_dims):
         # Track slices with output dataframe
         output_df = output_df.append({'id': current_pat['id'], 
                                       'image': img_slice_name, 
+                                      'truthid': current_pat['truthid'], 
                                       'target': current_pat['target']}, 
                                       ignore_index = True)
     

@@ -31,7 +31,7 @@ import os
 os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
 
 # Set this environment variable to only use the first available GPU
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
 # For tensorflow 2.x.x allow memory growth on GPU
 ###################################
@@ -217,7 +217,10 @@ def PocketNet(inputShape,
 
     # Apply global max-pooling to output of bottleneck if classification
     if mode == 'class':
-        x = layers.GlobalMaxPooling2D()(x)
+        if dim == '3d':
+           x = layers.GlobalMaxPooling3D()(x)
+        elif dim == '2d':
+           x = layers.GlobalMaxPooling2D()(x)
         output = layers.Dense(numClasses, activation = 'softmax')(x)
 
     
@@ -266,11 +269,11 @@ class data_generator(keras.utils.Sequence):
         
     def __data_generation(self, index):
         X = np.empty((self.batch_size, *self.dim, self.n_channels))
-        y = np.empty((self.batch_size, *self.dim, self.n_classes))
+        y = np.empty((self.batch_size,self.n_classes))
 
         for i in range(index, index + self.batch_size):
             X[i - index] = np.load(self.dataframe.iloc[i]['image'])
-            y[i - index] = self.dataframe.iloc[i]['target']
+            y[i - index] = self.dataframe.iloc[i]['truthid']
         return X, y
 
 
@@ -376,115 +379,9 @@ def inference_covidx(model, df):
 
 # ### Run data saturation tests
 # 
-# For BraTS and COVIDx, train model with 1.5%, 3%, 5%, 10%, 25%, 50%, and 100% of training data and predict on fixed test set. 
+# train model with kfold
 
 # In[ ]:
-
-
-def run_saturation_brats(pocket):
-    
-    # Load main dataframe with images and targets
-    train = pd.read_csv('brats_slices_paths.csv')
-    pats = np.unique(train['id'])
-
-    # Fix a test set and scale up the size of each training set
-    trainPats, testPats, _, _ = train_test_split(pats, pats, test_size = 0.20, random_state = 0)
-    trainPats, valPats, _, _ = train_test_split(trainPats, trainPats, test_size = 0.05, random_state = 0)
-    
-    original_data = pd.read_csv('brats_paths.csv')
-    test_original = train.loc[train['id'].isin(testPats)]
-    test_original = test_original.reset_index(drop = True)
-    
-    test = train.loc[train['id'].isin(testPats)]
-    test = test.reset_index(drop = True)
-    
-    val = train.loc[train['id'].isin(valPats)]
-    val = val.reset_index(drop = True)
-    numVal = len(val) # Need number of validation patients for keras fit_generator function
-    
-    train = train.loc[train['id'].isin(trainPats)]
-    train = train.reset_index(drop = True)
-
-    # Logarithmic data scaling
-    numTrain = len(trainPats)
-    logSizes = [0.015, 0.03, 0.05, 0.10, 0.25, 0.50, 1.00]
-    chunkSize = [int(np.ceil(numTrain * i)) for i in logSizes]
-    
-    # For each split, train a model and predict on validation data. Write validation predictions as .nii.gz files.
-    for i in range(len(logSizes)):
-        
-        if pocket:
-            print('Running pocket ' + net + ' with ' + str(100 * logSizes[i]) + '% of training data')
-        else:
-            print('Running full ' + net + ' with ' + str(100 * logSizes[i]) + '% of training data')
-            
-        currentPats = trainPats[0:chunkSize[i]]
-        currentTrain = train.loc[train['id'].isin(currentPats)]
-        currentTrain = currentTrain.reset_index(drop = True)
-        numCurrentTrain = len(currentTrain)
-        
-        # Create training and validation data generators
-        batchSize = 4
-        trainGenerator = data_generator(currentTrain, batchSize)
-        validationGenerator = data_generator(val, batchSize)
-
-        # Create model, compile it, and set up callbacks
-        model = PocketNet(inputShape = (5, 240, 240, 4), 
-                          numClasses = 2, 
-                          mode = 'seg', 
-                          net = 'unet', 
-                          pocket = pocket, 
-                          initFilters = 16, 
-                          depth = 4)
-        model.compile(optimizer = 'adam', loss = [dice_loss_l2])
-
-        # Reduce learning rate by 0.5 if validation dice coefficient does not improve after 5 epochs
-        reduceLr = ReduceLROnPlateau(monitor = 'val_loss', 
-                                     mode = 'min',
-                                     factor = 0.5, 
-                                     patience = 5, 
-                                     min_lr = 0.000001, 
-                                     verbose = 1)
-
-        if pocket:
-            modelName = 'models/' + net + '_pocket_' + str(100 * logSizes[i]) + '.h5'
-        else:
-            modelName = 'models/' + net + '_full_' + str(100 * logSizes[i]) + '.h5'
-        
-        saveBestModel = ModelCheckpoint(filepath = modelName, 
-                                        monitor = 'val_loss', 
-                                        verbose = 1, 
-                                        save_best_only = True)
-
-        # Train model
-        model.fit(trainGenerator, 
-                  epochs = 50, 
-                  steps_per_epoch = (numCurrentTrain // (batchSize)), 
-                  validation_data = validationGenerator, 
-                  validation_steps = (numVal // (batchSize)), 
-                  callbacks = [reduceLr, saveBestModel], 
-                  verbose = 1,  
-                  use_multiprocessing = True, 
-                  workers = 8)
-
-        
-        # Use best model to get 3D predictions
-        model = load_model(modelName, custom_objects = {'dice_loss_l2': dice_loss_l2})
-        
-        # Run inference function to write 3D segmentation masks as nifti files
-        if pocket:
-            predDest = 'data_scaling/predictions_' + net + '_pocket_' + str(100 * logSizes[i]) + '/'
-        else:
-            predDest = 'data_scaling/predictions_' + net + '_full_' + str(100 * logSizes[i]) + '/'
-            
-        # Make prediction folder if it does not exist
-        if not(os.path.isdir(predDest)):
-            os.mkdir(predDest)
-        
-        # Run inference on test set
-        inference_brats(model, test_original, 2, predDest)
-
-    ##### END OF FUNCTION #####
 
 
 # In[ ]:
@@ -550,8 +447,8 @@ def run_saturation_pdac(pocket):
         currentTrain = train.iloc[0:chunkSize[i]]
 
         # Create training and validation generators 
-        trainGenerator = data_generator(currentTrain, batchSize)
-        validationGenerator = data_generator(val, batchSize)
+        trainGenerator = data_generator(currentTrain, batchSize,dim = (96, 256, 256),n_channels=2,n_classes=2)
+        validationGenerator = data_generator(val, batchSize,dim = (96, 256, 256),n_channels=2,n_classes=2)
         
         # Create and compile model
         model = PocketNet((256, 256, 96,2), 2, 'class', net , pocket, 16, 4)
@@ -561,9 +458,9 @@ def run_saturation_pdac(pocket):
         # Reduce learning rate when learning stalls
         reduceLr = ReduceLROnPlateau(monitor = 'val_categorical_accuracy', 
                                      mode = 'max',
-                                     factor = 0.5, 
-                                     patience = 5, 
-                                     min_lr = 0.000001, 
+                                     factor = 0.1, 
+                                     patience = 3, 
+                                     min_lr = 0.0000001, 
                                      verbose = 1)
 
         # Save best model based on validation accuracy
@@ -580,14 +477,15 @@ def run_saturation_pdac(pocket):
                                         save_best_only = True)
         
         # Fit model
-        model.fit(trainGen, 
+        model.fit(trainGenerator , 
                   epochs = 50,
                   steps_per_epoch = (len(currentTrain)) // batchSize,
-                  validation_data = valGen,
+                  validation_data = validationGenerator ,
                   validation_steps = (len(val)) // batchSize,
-                  callbacks = [reduceLr, saveBestModel], 
-                  use_multiprocessing = True, 
-                  workers = 8)
+                  callbacks = [reduceLr, saveBestModel]
+                  #use_multiprocessing = True, 
+                 # workers = 8
+                  )
         
         # Load best model for prediction
         model = load_model(modelName)
