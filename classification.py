@@ -329,84 +329,85 @@ def run_saturation_pdac(pocket):
     # Used clean version of COVIDx dataset. See preprocess.ipynb.
     fulldata = pd.read_csv('dicom/wide_slices_paths.csv')
     pats = np.unique(fulldata['id'])
-    idfold=0
     nfold = 5
-    (train_validation_index,test_index) = GetSetupKfolds(nfold ,idfold,pats )
-    trainPats, valPats, _, _ = train_test_split(train_validation_index, train_validation_index, test_size = 0.10, random_state = 0)
+    for idfold in range(nfold):
+    #for idfold in [0]:
+       (train_validation_index,test_index) = GetSetupKfolds(nfold ,idfold,pats )
+       trainPats, valPats, _, _ = train_test_split(train_validation_index, train_validation_index, test_size = 0.10, random_state = 0)
 
-    # get subsets
-    val=fulldata[fulldata['id'].isin(valPats)]
-    train=fulldata[fulldata['id'].isin(trainPats)]
-    test=fulldata[fulldata['id'].isin(test_index)]
-        
-    ## # Use COVIDx test set and scale up the size of each training set
-    ## train, val, _, _ = train_test_split(train, train['target'], test_size = 0.05, random_state = 0)
-    ## train = train.reset_index(drop = True)
-    ## val = val.reset_index(drop = True)
-    ## val_imbalance = 1 - np.sum(val['target'].map(int)) / len(val)
-    ## print('Val class imbalance = ' + str(val_imbalance))
-    
-    # Define batchsize for models
-    batchSize = 4
-    
-    # Save predictions here
-    # TODO 
-    preds = test[['image', 'truthid']]
-        
-    net = 'unet'
+       # get subsets
+       val=fulldata[fulldata['id'].isin(valPats)]
+       train=fulldata[fulldata['id'].isin(trainPats)]
+       test=fulldata[fulldata['id'].isin(test_index)]
+           
+       ## # Use COVIDx test set and scale up the size of each training set
+       ## train, val, _, _ = train_test_split(train, train['target'], test_size = 0.05, random_state = 0)
+       ## train = train.reset_index(drop = True)
+       ## val = val.reset_index(drop = True)
+       ## val_imbalance = 1 - np.sum(val['target'].map(int)) / len(val)
+       ## print('Val class imbalance = ' + str(val_imbalance))
+       
+       # Define batchsize for models
+       batchSize = 4
+       
+       # Save predictions here
+       # TODO 
+       preds = test[['image', 'truthid']]
+           
+       net = 'unet'
 
-    # Create training and validation generators 
-    trainGenerator = data_generator(train, batchSize,dim = (96, 256, 256),n_channels=2,n_classes=2)
-    validationGenerator = data_generator(val, batchSize,dim = (96, 256, 256),n_channels=2,n_classes=2)
-    
-    # Create and compile model
-    model = PocketNet((96,256, 256, 2), 2, 'class', net , pocket, 16, 4)
-    model.compile(optimizer = 'adam', loss = 'categorical_crossentropy', metrics = ['categorical_accuracy', tf.keras.metrics.AUC()])
+       # Create training and validation generators 
+       trainGenerator = data_generator(train, batchSize,dim = (96, 256, 256),n_channels=2,n_classes=2)
+       validationGenerator = data_generator(val, batchSize,dim = (96, 256, 256),n_channels=2,n_classes=2)
+       
+       # Create and compile model
+       model = PocketNet((96,256, 256, 2), 2, 'class', net , pocket, 16, 4)
+       model.compile(optimizer = 'adam', loss = 'categorical_crossentropy', metrics = ['categorical_accuracy', tf.keras.metrics.AUC()])
 
-    # Define callbacks
-    # Reduce learning rate when learning stalls
-    reduceLr = ReduceLROnPlateau(monitor = 'val_categorical_accuracy', 
-                                 mode = 'max',
-                                 factor = 0.1, 
-                                 patience = 3, 
-                                 min_lr = 0.0000001, 
-                                 verbose = 1)
-
-    # Save best model based on validation accuracy
-    # Name convention: (architecture)_(full/pocket)_(% of training data used).h5 -> unet_pocket_20.h5
-    if pocket:
-        modelName = 'models/' + net + '_pocket_' + str(idfold ) + '.h5'
-    else:
-        modelName = 'models/' + net + '_full_' + str(idfold ) + '.h5'
-    
-    saveBestModel = ModelCheckpoint(filepath = modelName, 
-                                    monitor = 'val_categorical_accuracy', 
+       # Define callbacks
+       # Reduce learning rate when learning stalls
+       reduceLr = ReduceLROnPlateau(monitor = 'val_categorical_accuracy', 
                                     mode = 'max',
-                                    verbose = 1, 
-                                    save_best_only = True)
-    
-    # Fit model
-    model.fit(trainGenerator , 
-              epochs = 2,
-              steps_per_epoch = (len(train)) // batchSize,
-              validation_data = validationGenerator ,
-              validation_steps = (len(val)) // batchSize,
-              callbacks = [reduceLr, saveBestModel]
-              #use_multiprocessing = True, 
-             # workers = 8
-              )
-    
-    # Load best model for prediction
-    model = load_model(modelName)
-    preds[modelName[7:-3]] = np.array(inference_class(model, test))
-    
-    # For each network architecture, write scaling results to csv file
-    if pocket:
-        csvFile = 'preds_' + net + '_pocket.csv'
-    else:
-        csvFile = 'preds_' + net + '_full.csv'
+                                    factor = 0.1, 
+                                    patience = 3, 
+                                    min_lr = 0.0000001, 
+                                    verbose = 1)
+
+       # Save best model based on validation accuracy
+       # Name convention: (architecture)_(full/pocket)_(% of training data used).h5 -> unet_pocket_20.h5
+       if pocket:
+           modelName = 'models/' + net + '_pocket_' + str(idfold ) + '.h5'
+       else:
+           modelName = 'models/' + net + '_full_' + str(idfold ) + '.h5'
+       
+       saveBestModel = ModelCheckpoint(filepath = modelName, 
+                                       monitor = 'val_categorical_accuracy', 
+                                       mode = 'max',
+                                       verbose = 1, 
+                                       save_best_only = True)
+       
+       # Fit model
+       model.fit(trainGenerator , 
+                 epochs = 2,
+                 steps_per_epoch = (len(train)) // batchSize,
+                 validation_data = validationGenerator ,
+                 validation_steps = (len(val)) // batchSize,
+                 callbacks = [reduceLr, saveBestModel]
+                 #use_multiprocessing = True, 
+                # workers = 8
+                 )
+       
+       # Load best model for prediction
+       model = load_model(modelName)
+       preds[modelName[7:-3]] = np.array(inference_class(model, test))
+       
+       # For each network architecture, write scaling results to csv file
+       if pocket:
+           csvFile = 'preds_' + net + '_pocket'+str(idfold)+'.csv'
+       else:
+           csvFile = 'preds_' + net + '_full'+str(idfold)+'.csv'
    
-    preds.to_csv(csvFile, index = False)
+       preds.to_csv(csvFile, index = False)
 
     ### END OF FUNCTION ###
 
