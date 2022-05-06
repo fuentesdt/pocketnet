@@ -109,9 +109,8 @@ def ReadMaskSITK(path, classes):
 def write_slices(input_csv, image_dest, mask_dest, output_csv, image_dims):
     input_df = pd.read_csv(input_csv)
     num_pats = len(input_df)
-    slice_thickness = 5
     
-    output_cols = ['id', 'image', 'mask']
+    output_cols = ['id', 'image', 'target']
     output_df = pd.DataFrame(columns = output_cols)
     
     for i in trange(num_pats):
@@ -120,150 +119,36 @@ def write_slices(input_csv, image_dest, mask_dest, output_csv, image_dims):
         current_pat = input_df.iloc[i].to_dict()
         
         # Read in images and masks
-        images_list = list(current_pat.values())[2:len(current_pat)]
+        images_list = list(current_pat.values())[1:3]
         img = ReadImagesSITK(images_list, dims = image_dims)
-        mask_binary = ReadMaskSITK(current_pat['mask'], classes = [0, 1])
-        img_depth = image_dims[0]
+        #mask_binary = ReadMaskSITK(current_pat['mask'], classes = [0, 1])
 
-        for k in range(img_depth - slice_thickness + 1):
-            mask_binary_slice = mask_binary[k:(k + slice_thickness), ...]
-            
-            # Only take slices with foreground in them - this is for training only
-            if  np.sum(mask_binary_slice[..., 1]) > 25:
-                
-                # Get corresponding image slices
-                img_slice = img[k:(k + slice_thickness), ...]
-                
-                # Name the slices and write them to disk
-                slice_name = current_pat['id'] + '_' + str(k) + '.npy'
-                img_slice_name = image_dest + slice_name
-                mask_binary_slice_name = mask_dest + slice_name
-
-                np.save(img_slice_name, img_slice)
-                np.save(mask_binary_slice_name, mask_binary_slice)
-
-                # Track slices with output dataframe
-                output_df = output_df.append({'id': current_pat['id'], 
-                                              'image': img_slice_name, 
-                                              'mask': mask_binary_slice_name}, 
-                                              ignore_index = True)
+        img_slice_name = image_dest + "%d/image.npy"  % current_pat['id'] 
+        np.save(img_slice_name, img )
+        # Track slices with output dataframe
+        output_df = output_df.append({'id': current_pat['id'], 
+                                      'image': img_slice_name, 
+                                      'target': current_pat['target']}, 
+                                      ignore_index = True)
     
+
     # Save dataframe to .csv and use the .csv for training the BraTS model
     output_df.to_csv(output_csv, index = False)
     
     ############## END OF FUNCTION ##############
 
+# ### Create file path CSVs 
 
-# ### Create file path CSVs for BraTS and NFBS datasets
+################# Preprocess and write PDAC slices to disk #################
+pdac_input_csv = 'dicom/wideclassificationroid2.csv'
 
-# In[ ]:
-
-
-################# Create binary masks for BraTS #################
-
-# Change this to the appropriate folder on your system 
-brats_base_dir = '/rsrch1/ip/aecelaya/data/brats_2020/raw/train/'
-
-binarize_brats(brats_base_dir)
-
-################# Create CSV with BraTS file paths #################
-brats_names_dict = {'mask': ['seg_binary.nii.gz'],
-                    't1': ['t1.nii.gz'],
-                    't2': ['t2.nii.gz'], 
-                    'tc': ['t1ce.nii.gz'], 
-                    'fl': ['flair.nii.gz']}
-
-brats_output_csv = 'brats_paths.csv'
-get_paths_csv(brats_base_dir, brats_names_dict, brats_output_csv)
-
-################# Create CSV with NFBS file paths #################
-nfbs_names_dict = {'mask': ['brainmask.nii.gz'],
-                   't1': ['T1w.nii.gz']}
-
-# Change this to the appropriate folder on your system 
-nfbs_base_dir = '/rsrch1/ip/aecelaya/data/nfbs/raw/'
-
-nfbs_output_csv = 'nfbs_paths.csv'
-get_paths_csv(nfbs_base_dir, nfbs_names_dict, nfbs_output_csv)
-
-
-# ### Preprocess BraTS and NFBS and write slices to disk
-
-# In[ ]:
-
-
-################# Preprocess and write BraTS slices to disk #################
-brats_input_csv = 'brats_paths.csv'
 
 # Change these to the appropriate folder on your system 
-brats_image_dest = '/rsrch1/ip/aecelaya/github/NecrosisRecurrence/pocketnet/brats/test/images/'
-brats_mask_dest = '/rsrch1/ip/aecelaya/github/NecrosisRecurrence/pocketnet/brats/test/masks/'
+pdac_image_dest = '/rsrch3/ip/dtfuentes/github/pdacclassify/D2Processed/'
+pdac_mask_dest  = pdac_image_dest 
 
+pdac_output_csv = 'dicom/wide_slices_paths.csv'
 
-brats_output_csv = 'brats_slices_paths.csv'
+write_slices(pdac_input_csv, pdac_image_dest, pdac_mask_dest, pdac_output_csv, image_dims = (64, 128, 128))
 
-write_slices(brats_input_csv, brats_image_dest, brats_mask_dest, brats_output_csv, image_dims = (155, 240, 240))
-
-################# Preprocess and write NFBS slices to disk #################
-nfbs_input_csv = 'nfbs_paths.csv'
-
-# Change these to the appropriate folder on your system 
-nfbs_image_dest = '/rsrch1/ip/aecelaya/github/NecrosisRecurrence/pocketnet/brats/test2/images/'
-nfbs_mask_dest = '/rsrch1/ip/aecelaya/github/NecrosisRecurrence/pocketnet/brats/test2/masks/'
-
-nfbs_output_csv = 'nfbs_slices_paths.csv'
-
-write_slices(nfbs_input_csv, nfbs_image_dest, nfbs_mask_dest, nfbs_output_csv, image_dims = (192, 256, 256))
-
-
-# ### Clean up file names for COVIDx8B
-
-# In[ ]:
-
-
-'''
-Clean up the COVIDx dataset. There are a few glitches in it. This script corrects them.
-
-1) Some files in the COVIDx training set are compressed (i.e., end with .gz). Keras can't read
-zipped files with its native image data generators. This script goes through each file
-and checks to see if its compressed and unzips it if it is. 
-
-2) The original train.csv file that comes with the COVIDx dataset has incorrect file names for rows
-725 - 1667. These rows only contian numbers and not the name of an image. For example, row 725 has 
-the entry 1 but it should be COVID1.png.
-
-Before running this, please change the file paths in this code to match your system.
-'''
-
-def get_files(dir_name):
-    list_of_files = list()
-    for (dirpath, dirnames, filenames) in os.walk(dir_name):
-        list_of_files += [os.path.join(dirpath, file) for file in filenames]
-    return list_of_files
-
-files_list = get_files('/rsrch1/ip/aecelaya/data/covidx/processed/train')
-for file in files_list:
-    if '(' in file:
-        new_file = file.replace('(', '')
-        new_file = new_file.replace(')', '')
-        print('Renaming ' + file + ' to ' + new_file)
-        os.rename(file, new_file)
-        file = new_file
-        
-    if '.gz' in file:
-        # Unzip files with gunzip
-        print('Unzipping ' + file)
-        subprocess.call('gunzip ' + file, shell = True)
-        
-train_df = pd.read_csv('/rsrch1/ip/aecelaya/data/covidx/raw/data/train.csv')
-for i in range(724, 1667):
-    number = train_df.iloc[i]['image']
-    train_df.at[i, 'image'] = 'COVID' + number + '.png'
-    
-for i in range(len(train_df)):
-    file = '/rsrch1/ip/aecelaya/data/covidx/train/' + train_df.iloc[i]['image']
-    if not os.path.isfile(file):
-        print('Does not exist: ' + file + ', row = ' + str(i))
-
-train_df.to_csv('covidx_train_clean.csv', index = False)
 
