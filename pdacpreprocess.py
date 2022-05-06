@@ -149,6 +149,6 @@ pdac_mask_dest  = pdac_image_dest
 
 pdac_output_csv = 'dicom/wide_slices_paths.csv'
 
-write_slices(pdac_input_csv, pdac_image_dest, pdac_mask_dest, pdac_output_csv, image_dims = (64, 128, 128))
+write_slices(pdac_input_csv, pdac_image_dest, pdac_mask_dest, pdac_output_csv, image_dims = (96, 256, 256))
 
 

@@ -270,7 +270,7 @@ class data_generator(keras.utils.Sequence):
 
         for i in range(index, index + self.batch_size):
             X[i - index] = np.load(self.dataframe.iloc[i]['image'])
-            y[i - index] = np.load(self.dataframe.iloc[i]['mask'])
+            y[i - index] = self.dataframe.iloc[i]['target']
         return X, y
 
 
@@ -505,11 +505,11 @@ def GetSetupKfolds(numfolds,idfold,dataidsfull ):
      test_index  = None  
   return (train_index,test_index)
 
-def run_saturation_covidx(pocket):
+def run_saturation_pdac(pocket):
     
     # Load main dataframe with images and targets
     # Used clean version of COVIDx dataset. See preprocess.ipynb.
-    fulldata = pd.read_csv('dicom/wideclassificationd2.csv')
+    fulldata = pd.read_csv('dicom/wide_slices_paths.csv')
     pats = np.unique(fulldata['id'])
     idfold=0
     nfold = 5
@@ -520,10 +520,6 @@ def run_saturation_covidx(pocket):
     val=fulldata[fulldata['id'].isin(valPats)]
     train=fulldata[fulldata['id'].isin(trainPats)]
         
-    # Convert targets from int to str for Keras generators
-    train['target'] = train['target'].map(str)
-    ## test['target'] = test['target'].map(str)
-    
     ## # Use COVIDx test set and scale up the size of each training set
     ## train, val, _, _ = train_test_split(train, train['target'], test_size = 0.05, random_state = 0)
     ## train = train.reset_index(drop = True)
@@ -537,16 +533,7 @@ def run_saturation_covidx(pocket):
     chunkSize = [int(np.ceil(numTrain * i)) for i in logSizes]
     
     # Define batchsize for models
-    batchSize = 32
-    
-    # Parameters for Keras generator 
-    flowParams = dict(directory = '/rsrch1/ip/aecelaya/data/covidx/processed/train/', 
-                      x_col = 'Art', 
-                      y_col = 'target',
-                      class_mode = 'categorical', 
-                      color_mode = 'grayscale', 
-                      batch_size = batchSize)
-    
+    batchSize = 4
     
     # Save predictions here
     # TODO 
@@ -563,16 +550,11 @@ def run_saturation_covidx(pocket):
         currentTrain = train.iloc[0:chunkSize[i]]
 
         # Create training and validation generators 
-        trainGen = keras.preprocessing.image.ImageDataGenerator(samplewise_center = True, 
-                                                                samplewise_std_normalization = True)
-        trainGen = trainGen.flow_from_dataframe(currentTrain, **flowParams)
-        
-        valGen = keras.preprocessing.image.ImageDataGenerator(samplewise_center = True, 
-                                                              samplewise_std_normalization = True)
-        valGen = valGen.flow_from_dataframe(val, **flowParams)
+        trainGenerator = data_generator(currentTrain, batchSize)
+        validationGenerator = data_generator(val, batchSize)
         
         # Create and compile model
-        model = PocketNet((256, 256, 1), 2, 'class', net , pocket, 16, 4)
+        model = PocketNet((256, 256, 96,2), 2, 'class', net , pocket, 16, 4)
         model.compile(optimizer = 'adam', loss = 'categorical_crossentropy', metrics = ['categorical_accuracy', tf.keras.metrics.AUC()])
 
         # Define callbacks
@@ -628,5 +610,5 @@ def run_saturation_covidx(pocket):
 pockets = [True, False]
 for pocket in pockets:
     #run_saturation_brats(pocket = pockets)
-    run_saturation_covidx(pocket = pockets)
+    run_saturation_pdac(pocket = pockets)
 
