@@ -330,8 +330,8 @@ def run_saturation_pdac(pocket):
     fulldata = pd.read_csv('dicom/wide_slices_paths.csv')
     pats = np.unique(fulldata['id'])
     nfold = 5
-    #for idfold in range(nfold):
-    for idfold in [0]:
+    for idfold in range(nfold):
+    #for idfold in [0]:
        (train_validation_index,test_index) = GetSetupKfolds(nfold ,idfold,pats )
        trainPats, valPats, _, _ = train_test_split(train_validation_index, train_validation_index, test_size = 0.10, random_state = 0)
 
@@ -362,13 +362,12 @@ def run_saturation_pdac(pocket):
        net = 'unet'
 
        # Create training and validation generators 
-       trainGenerator      = data_generator(train, batchSize,dim = (96, 256, 256),n_channels=1,n_classes=2)
-       validationGenerator = data_generator(val  , batchSize,dim = (96, 256, 256),n_channels=1,n_classes=2)
+       trainGenerator      = data_generator(train, batchSize,dim = (96, 256, 256),n_channels=2,n_classes=2)
+       validationGenerator = data_generator(val  , batchSize,dim = (96, 256, 256),n_channels=2,n_classes=2)
        
        # Create and compile model
-       model = PocketNet((96,256, 256, 1), 2, 'class', net , pocket, 16, 1)
+       model = PocketNet((96,256, 256, 2), 2, 'class', net , pocket, 16, 1)
        model.summary()
-       #model = PocketNet((96,256, 256, 2), 2, 'class', net , pocket, 16, 4)
        myoptim = tf.keras.optimizers.Adadelta()
 
        model.compile(optimizer = myoptim , loss = 'binary_crossentropy', metrics = ['binary_accuracy', tf.keras.metrics.AUC()])
@@ -402,7 +401,7 @@ def run_saturation_pdac(pocket):
 
        # Fit model
        model.fit(trainGenerator , 
-                 epochs = 30,
+                 epochs = 70,
                  steps_per_epoch = (len(train)) // batchSize,
                  validation_data = validationGenerator ,
                  validation_steps = (len(val)) // batchSize,
