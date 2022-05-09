@@ -120,7 +120,8 @@ def write_slices(input_csv, image_dest, mask_dest, output_csv, image_dims):
         current_pat = input_df.iloc[i].to_dict()
         
         # Read in images and masks
-        images_list = list(current_pat.values())[1:3]
+        images_list = list(current_pat.values())[2:3]
+        print ( list(current_pat.values())[3:])
         img = ReadImagesSITK(images_list, dims = image_dims)
         #mask_binary = ReadMaskSITK(current_pat['mask'], classes = [0, 1])
 

@@ -166,7 +166,7 @@ def PocketNet(inputShape,
         skip = Block(x, filters, params, net, dim)
         
         if dim == '3d':
-            x = layers.MaxPooling3D(pool_size = (1, 2, 2), strides = (1, 2, 2))(skip)
+            x = layers.MaxPooling3D(pool_size = (2, 2, 2), strides = (2, 2, 2))(skip)
         elif dim == '2d':
             x = layers.MaxPooling2D(pool_size = (2, 2), strides = (2, 2))(skip)
             
@@ -366,7 +366,9 @@ def run_saturation_pdac(pocket):
        validationGenerator = data_generator(val, batchSize,dim = (96, 256, 256),n_channels=2,n_classes=2)
        
        # Create and compile model
-       model = PocketNet((96,256, 256, 2), 2, 'class', net , pocket, 16, 4)
+       model = PocketNet((96,256, 256, 1), 2, 'class', net , pocket, 16, 1)
+       model.summary()
+       #model = PocketNet((96,256, 256, 2), 2, 'class', net , pocket, 16, 4)
        myoptim = tf.keras.optimizers.Adadelta()
 
        model.compile(optimizer = myoptim , loss = 'binary_crossentropy', metrics = ['binary_accuracy', tf.keras.metrics.AUC()])
@@ -400,7 +402,7 @@ def run_saturation_pdac(pocket):
 
        # Fit model
        model.fit(trainGenerator , 
-                 epochs = 100,
+                 epochs = 20,
                  steps_per_epoch = (len(train)) // batchSize,
                  validation_data = validationGenerator ,
                  validation_steps = (len(val)) // batchSize,
