@@ -330,8 +330,8 @@ def run_saturation_pdac(pocket):
     fulldata = pd.read_csv('dicom/wide_slices_paths.csv')
     pats = np.unique(fulldata['id'])
     nfold = 5
-    for idfold in range(nfold):
-    #for idfold in [0]:
+    #for idfold in range(nfold):
+    for idfold in [0]:
        (train_validation_index,test_index) = GetSetupKfolds(nfold ,idfold,pats )
        trainPats, valPats, _, _ = train_test_split(train_validation_index, train_validation_index, test_size = 0.10, random_state = 0)
 
@@ -339,6 +339,11 @@ def run_saturation_pdac(pocket):
        val=fulldata[fulldata['id'].isin(valPats)]
        train=fulldata[fulldata['id'].isin(trainPats)]
        test=fulldata[fulldata['id'].isin(test_index)]
+   
+       # error check
+       if( len(np.unique(train['target'])) < 2):
+         print("training set error")
+         raise RuntimeError
            
        ## # Use COVIDx test set and scale up the size of each training set
        ## train, val, _, _ = train_test_split(train, train['target'], test_size = 0.05, random_state = 0)
@@ -362,14 +367,16 @@ def run_saturation_pdac(pocket):
        
        # Create and compile model
        model = PocketNet((96,256, 256, 2), 2, 'class', net , pocket, 16, 4)
-       model.compile(optimizer = 'adam', loss = 'categorical_crossentropy', metrics = ['categorical_accuracy', tf.keras.metrics.AUC()])
+       myoptim = tf.keras.optimizers.Adadelta()
+
+       model.compile(optimizer = myoptim , loss = 'binary_crossentropy', metrics = ['binary_accuracy', tf.keras.metrics.AUC()])
 
        # Define callbacks
        # Reduce learning rate when learning stalls
-       reduceLr = ReduceLROnPlateau(monitor = 'val_categorical_accuracy', 
-                                    mode = 'max',
-                                    factor = 0.1, 
-                                    patience = 3, 
+       reduceLr = ReduceLROnPlateau(monitor = 'val_loss', 
+                                    mode = 'min',
+                                    factor = 0.5, 
+                                    patience = 7, 
                                     min_lr = 0.0000001, 
                                     verbose = 1)
 
@@ -381,25 +388,31 @@ def run_saturation_pdac(pocket):
            modelName = 'models/' + net + '_full_' + str(idfold ) + '.h5'
        
        saveBestModel = ModelCheckpoint(filepath = modelName, 
-                                       monitor = 'val_categorical_accuracy', 
-                                       mode = 'max',
+                                       monitor = 'val_loss', 
+                                       mode = 'min',
                                        verbose = 1, 
                                        save_best_only = True)
        
+       # tensorboard callbacks
+       from tensorflow.keras.callbacks import TensorBoard
+       os.system('mkdir -p log/%d/' % idfold)
+       tensorboard = TensorBoard(log_dir='./log/%d/' % idfold, histogram_freq=0, write_graph=True, write_images=False)
+
        # Fit model
        model.fit(trainGenerator , 
-                 epochs = 2,
+                 epochs = 100,
                  steps_per_epoch = (len(train)) // batchSize,
                  validation_data = validationGenerator ,
                  validation_steps = (len(val)) // batchSize,
-                 callbacks = [reduceLr, saveBestModel]
+                 callbacks = [tensorboard, saveBestModel]
+                 #callbacks = [tensorboard,reduceLr, saveBestModel]
                  #use_multiprocessing = True, 
                 # workers = 8
                  )
        
        # Load best model for prediction
        model = load_model(modelName)
-       preds[modelName[7:-3]] = np.array(inference_class(model, test))
+       preds['predictions'] = np.array(inference_class(model, test))
        
        # For each network architecture, write scaling results to csv file
        if pocket:

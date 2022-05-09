@@ -85,13 +85,14 @@ def ReadImagesSITK(images_list, dims):
     # Read image, normalize, and get numpy array
     def GetArray(path):
         arr = sitk.ReadImage(path)
-        arr = sitk.Normalize(arr)
+        # arr = sitk.Normalize(arr)
         arr = sitk.GetArrayFromImage(arr)
         return arr
     
     image = np.empty((*dims, len(images_list)))
     for i in range(len(images_list)):
         image[..., i] = GetArray(images_list[i])
+        print(images_list[i],'min',np.min(image[..., i]),'max',np.max(image[..., i]),'mean',np.mean(image[..., i]),'std',np.std(image[..., i]) )
 
     return image
 
