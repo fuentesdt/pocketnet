@@ -247,7 +247,7 @@ def PocketNet(inputShape,
 
 
 class data_generator(keras.utils.Sequence):
-    def __init__(self, dataframe, batch_size = 1, dim = (240, 240, 5), n_channels = 4, n_classes = 2, shuffle = True):
+    def __init__(self, dataframe, batch_size = 1, dim = (240, 240, 5), n_channels = 4, n_classes = 2, shuffle = False):
         self.dim = dim
         self.dataframe = dataframe
         self.batch_size = batch_size
@@ -362,8 +362,8 @@ def run_saturation_pdac(pocket):
        net = 'unet'
 
        # Create training and validation generators 
-       trainGenerator = data_generator(train, batchSize,dim = (96, 256, 256),n_channels=1,n_classes=2)
-       validationGenerator = data_generator(val, batchSize,dim = (96, 256, 256),n_channels=1,n_classes=2)
+       trainGenerator      = data_generator(train, batchSize,dim = (96, 256, 256),n_channels=1,n_classes=2)
+       validationGenerator = data_generator(val  , batchSize,dim = (96, 256, 256),n_channels=1,n_classes=2)
        
        # Create and compile model
        model = PocketNet((96,256, 256, 1), 2, 'class', net , pocket, 16, 1)
@@ -402,7 +402,7 @@ def run_saturation_pdac(pocket):
 
        # Fit model
        model.fit(trainGenerator , 
-                 epochs = 20,
+                 epochs = 30,
                  steps_per_epoch = (len(train)) // batchSize,
                  validation_data = validationGenerator ,
                  validation_steps = (len(val)) // batchSize,
