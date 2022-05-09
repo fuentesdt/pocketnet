@@ -362,8 +362,8 @@ def run_saturation_pdac(pocket):
        net = 'unet'
 
        # Create training and validation generators 
-       trainGenerator = data_generator(train, batchSize,dim = (96, 256, 256),n_channels=2,n_classes=2)
-       validationGenerator = data_generator(val, batchSize,dim = (96, 256, 256),n_channels=2,n_classes=2)
+       trainGenerator = data_generator(train, batchSize,dim = (96, 256, 256),n_channels=1,n_classes=2)
+       validationGenerator = data_generator(val, batchSize,dim = (96, 256, 256),n_channels=1,n_classes=2)
        
        # Create and compile model
        model = PocketNet((96,256, 256, 1), 2, 'class', net , pocket, 16, 1)
