@@ -401,7 +401,7 @@ def run_saturation_pdac(pocket):
 
        # Fit model
        model.fit(trainGenerator , 
-                 epochs = 70,
+                 epochs = 140,
                  steps_per_epoch = (len(train)) // batchSize,
                  validation_data = validationGenerator ,
                  validation_steps = (len(val)) // batchSize,
